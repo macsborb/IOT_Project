@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Système de Détection IoT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/fr.js"></script>
+    <style>
+        .flatpickr-calendar {
+            background: var(--b1);
+            border-color: var(--b3);
+        }
+        .flatpickr-day {
+            color: var(--bc);
+        }
+        .flatpickr-day.selected {
+            background: var(--p);
+            border-color: var(--p);
+        }
+        .flatpickr-day.inRange {
+            background: var(--p);
+            opacity: 0.5;
+            border-color: var(--p);
+        }
+        .flatpickr-day.today {
+            border-color: var(--p);
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h1 class="card-title text-3xl mb-6">Système de Détection IoT</h1>
+                
+                <!-- État de l'Arduino -->
+                <div class="alert mb-4">
+                    <span class="text-lg">État de l'Arduino:</span>
+                    <div id="arduino-status" class="badge badge-lg badge-error">Hors ligne</div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Capteur tactile -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h2 class="card-title">
+                                <span class="text-xl">Capteur Tactile</span>
+                                <div id="touch-status" class="badge badge-lg badge-error">Inactif</div>
+                            </h2>
+                            <p id="touch-last" class="text-sm">Dernière activation: jamais</p>
+                        </div>
+                    </div>
+
+                    <!-- Capteur sonore -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h2 class="card-title">
+                                <span class="text-xl">Capteur Sonore</span>
+                                <div id="sound-status" class="badge badge-lg badge-error">Inactif</div>
+                            </h2>
+                            <p id="sound-last" class="text-sm">Dernière activation: jamais</p>
+                        </div>
+                    </div>
+
+                    <!-- Capteur IR -->
+                    <div class="card bg-base-200">
+                        <div class="card-body">
+                            <h2 class="card-title">
+                                <span class="text-xl">Capteur IR</span>
+                                <div id="ir-status" class="badge badge-lg badge-error">Inactif</div>
+                            </h2>
+                            <p id="ir-last" class="text-sm">Dernière activation: jamais</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Filtres -->
+                <div class="bg-base-200 p-4 rounded-lg mb-4">
+                    <h3 class="text-lg font-bold mb-3">Filtres</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Capteur</span>
+                            </label>
+                            <select id="filter-sensor" class="select select-bordered w-full">
+                                <option value="">Tous</option>
+                                <option value="touch">Tactile</option>
+                                <option value="sound">Sonore</option>
+                                <option value="ir">IR</option>
+                            </select>
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Durée minimum (s)</span>
+                            </label>
+                            <input type="number" id="filter-min-duration" class="input input-bordered" min="0">
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Durée maximum (s)</span>
+                            </label>
+                            <input type="number" id="filter-max-duration" class="input input-bordered" min="0">
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Période</span>
+                            </label>
+                            <input type="text" id="date-range" class="input input-bordered" placeholder="Sélectionner les dates">
+                        </div>
+                        </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text">Tri</span>
+                            </label>
+                            <select id="filter-order" class="select select-bordered w-full">
+                                <option value="DESC">Plus récent d'abord</option>
+                                <option value="ASC">Plus ancien d'abord</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="applyFilters()" class="btn btn-primary">Appliquer les filtres</button>
+                        <button onclick="resetFilters()" class="btn btn-ghost">Réinitialiser</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Capteur</th>
+                                <th>Durée</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-content">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const websocket = new WebSocket("ws://localhost:80");
+        const sensors = ['touch', 'sound', 'ir'];
+        const sensorStates = {
+            touch: false,
+            sound: false,
+            ir: false
+        };
+
+        // Initialisation du sélecteur de dates
+        const dateRangePicker = flatpickr("#date-range", {
+            mode: "range",
+            dateFormat: "Y-m-d",
+            locale: "fr",
+            altInput: true,
+            altFormat: "d F Y",
+            conjunction: " au ",
+            rangeSeparator: " au ",
+            defaultHour: 0,
+            allowInput: true,
+            showMonths: 2,
+            static: true
+        });
+
+        function getDurationClass(duration) {
+            if (duration === 'En cours') return 'text-warning';
+            duration = parseInt(duration);
+            if (duration <= 2) return 'text-success';
+            if (duration <= 5) return 'text-warning';
+            return 'text-error';
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-sensor').value = '';
+            document.getElementById('filter-min-duration').value = '';
+            document.getElementById('filter-max-duration').value = '';
+            dateRangePicker.clear();
+            document.getElementById('filter-order').value = 'DESC';
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const selectedDates = dateRangePicker.selectedDates;
+            let startDateTime = '';
+            let endDateTime = '';
+
+            if (selectedDates.length > 0) {
+                const startDate = selectedDates[0].toISOString().split('T')[0];
+                startDateTime = `${startDate}T00:00:00`;
+
+                const endDate = (selectedDates[1] || selectedDates[0]).toISOString().split('T')[0];
+                endDateTime = `${endDate}T23:59:59`;
+            }
+
+            const filters = {
+                sensor: document.getElementById('filter-sensor').value,
+                minDuration: document.getElementById('filter-min-duration').value,
+                maxDuration: document.getElementById('filter-max-duration').value,
+                startDateTime: startDateTime,
+                endDateTime: endDateTime,
+                order: document.getElementById('filter-order').value,
+            };
+
+            // Supprimer les filtres vides
+            Object.keys(filters).forEach(key => {
+                if (!filters[key]) delete filters[key];
+            });
+
+            websocket.send(JSON.stringify({
+                type: "getHistory",
+                filters: filters
+            }));
+        }
+
+        function updateSensorStatus(sensor, state) {
+            const statusElement = document.getElementById(`${sensor}-status`);
+            const lastElement = document.getElementById(`${sensor}-last`);
+            
+            if (state) {
+                statusElement.classList.remove('badge-error');
+                statusElement.classList.add('badge-success');
+                statusElement.textContent = 'Actif';
+                lastElement.textContent = `Dernière activation: ${new Date().toLocaleString()}`;
+            } else {
+                statusElement.classList.remove('badge-success');
+                statusElement.classList.add('badge-error');
+                statusElement.textContent = 'Inactif';
+            }
+            
+            sensorStates[sensor] = state;
+        }
+
+        websocket.addEventListener('open', () => {
+            // Demander l'historique
+            websocket.send(JSON.stringify({type: "getHistory"}));
+
+            websocket.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                const historyContent = document.getElementById("history-content");
+
+                switch(message.type) {
+                    case "StateChanged":
+                        if (message.sensor === 'arduino') {
+                            const arduinoStatus = document.getElementById('arduino-status');
+                            if (message.state) {
+                                arduinoStatus.classList.remove('badge-error');
+                                arduinoStatus.classList.add('badge-success');
+                                arduinoStatus.textContent = 'En ligne';
+                            } else {
+                                arduinoStatus.classList.remove('badge-success');
+                                arduinoStatus.classList.add('badge-error');
+                                arduinoStatus.textContent = 'Hors ligne';
+                            }
+                        } else {
+                            updateSensorStatus(message.sensor, message.state);
+                            if (message.state) {
+                                historyContent.insertAdjacentHTML(
+                                    "afterbegin",
+                                    `<tr data-sensor="${message.sensor}">
+                                        <td>${new Date(message.time).toLocaleString()}</td>
+                                        <td>${message.sensor}</td>
+                                        <td class="text-warning">En cours</td>
+                                    </tr>`
+                                );
+                            } else {
+                                applyFilters();
+                            }
+                        }
+                        break;
+                    case "getHistory":
+                        const history = [...message.content];
+                        historyContent.innerHTML = '';
+                        history.forEach(entry => {
+                            const startTime = new Date(entry.start_time).toLocaleString();
+                            const duration = entry.duration ? `${entry.duration} secondes` : 'En cours';
+                            const durationClass = getDurationClass(duration);
+                            historyContent.insertAdjacentHTML(
+                                "beforeend",
+                                `<tr data-sensor="${entry.sensor}">
+                                    <td>${startTime}</td>
+                                    <td>${entry.sensor}</td>
+                                    <td class="${durationClass}">${duration}</td>
+                                </tr>`
+                            );
+                        });
+                        break;
+                }
+            };
+        });
+    </script>
+</body>
+</html>

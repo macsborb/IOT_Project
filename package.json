@@ -1,0 +1,21 @@
+{
+  "name": "projet_iot",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node -r ./envVariables.js server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "autoprefixer": "^10.4.21",
+    "daisyui": "^5.0.43",
+    "express": "^5.1.0",
+    "http": "^0.0.1-security",
+    "mysql2": "^3.14.1",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.8",
+    "ws": "^8.18.2"
+  }
+}
