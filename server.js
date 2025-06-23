@@ -1,11 +1,11 @@
-
-
 const path = require('path');
 const http = require('http');
 const WebSocket = require("ws");
 const express = require('express');
 const mysql = require('mysql2/promise');
 const crypto = require('crypto');
+const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 
 const serverPort = 80;
 
@@ -68,6 +68,163 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.static(path.join(__dirname, 'front')));
+
+// Session store configuration
+const sessionStore = new MySQLStore({
+    ...mysqlConfig,
+    schema: {
+        tableName: 'sessions'
+    }
+});
+
+// Session middleware configuration
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore,
+    cookie: {
+        secure: false, // set to true if using https
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Initialize users table if it doesn't exist
+async function initDatabase() {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(64) NOT NULL,
+                salt VARCHAR(32) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+    } catch (err) {
+        console.error('Error initializing database:', err);
+    } finally {
+        connection.release();
+    }
+}
+
+// Route pour vérifier s'il y a déjà un utilisateur
+app.get('/api/has-admin', async (req, res) => {
+    try {
+        const [users] = await pool.query('SELECT COUNT(*) as count FROM users');
+        res.json({ hasAdmin: users[0].count > 0 });
+    } catch (err) {
+        res.status(500).json({ error: 'Erreur serveur' });
+    }
+});
+
+// Route pour créer le premier admin
+app.post('/api/create-admin', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Champs requis' });
+    }
+    try {
+        const [users] = await pool.query('SELECT COUNT(*) as count FROM users');
+        if (users[0].count > 0) {
+            return res.status(403).json({ error: 'Un administrateur existe déjà' });
+        }
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = crypto.createHash('sha256')
+            .update(password + salt)
+            .digest('hex');
+        await pool.query(
+            'INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)',
+            [username, hash, salt]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Erreur serveur' });
+    }
+});
+
+// Authentication middleware
+const requireAuth = (req, res, next) => {
+    if (req.session && req.session.userId) {
+        next();
+    } else {
+        res.redirect('/login.html');
+    }
+};
+
+// Login route
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        const [users] = await pool.query(
+            'SELECT * FROM users WHERE username = ?',
+            [username]
+        );
+        
+        if (users.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        const user = users[0];
+        const hash = crypto.createHash('sha256')
+            .update(password + user.salt)
+            .digest('hex');
+        
+        if (hash === user.password_hash) {
+            req.session.userId = user.id;
+            req.session.username = user.username;
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ error: 'Invalid credentials' });
+        }
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Logout route
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            res.status(500).json({ error: 'Error during logout' });
+        } else {
+            res.json({ success: true });
+        }
+    });
+});
+
+// Get current user
+app.get('/api/user', (req, res) => {
+    if (req.session && req.session.userId) {
+        res.json({
+            id: req.session.userId,
+            username: req.session.username
+        });
+    } else {
+        res.status(401).json({ error: 'Not authenticated' });
+    }
+});
+
+// Protect static files except login, setup, API, sensorEvent, heartbeat
+app.use((req, res, next) => {
+    if (
+        req.path === '/login.html' ||
+        req.path === '/setup.html' ||
+        req.path.startsWith('/api/') ||
+        req.path.startsWith('/sensorEvent') ||
+        req.path.startsWith('/heartbeat')
+    ) {
+        next();
+    } else {
+        requireAuth(req, res, next);
+    }
+});
 
 // Route pour le heartbeat de l'Arduino
 app.get("/heartbeat", (req, res) => {

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - Système de Détection IoT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="bg-base-200 min-h-screen flex items-center justify-center">
+    <div class="card w-96 bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h1 class="card-title text-2xl mb-6">Connexion</h1>
+            
+            <div id="error-message" class="alert alert-error hidden mb-4">
+                <span id="error-text"></span>
+            </div>
+
+            <form id="login-form" class="space-y-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Nom d'utilisateur</span>
+                    </label>
+                    <input type="text" id="username" name="username" class="input input-bordered" required>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Mot de passe</span>
+                    </label>
+                    <input type="password" id="password" name="password" class="input input-bordered" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full">Se connecter</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Redirection si aucun admin n'existe
+        fetch('/api/has-admin').then(async r => {
+            const data = await r.json();
+            if (!data.hasAdmin) {
+                window.location.href = '/setup.html';
+            }
+        });
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = '/';
+                } else {
+                    errorText.textContent = data.error || 'Erreur de connexion';
+                    errorMessage.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorText.textContent = 'Erreur serveur';
+                errorMessage.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

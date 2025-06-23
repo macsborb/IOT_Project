@@ -35,7 +35,13 @@
     <div class="container mx-auto px-4 py-8">
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
-                <h1 class="card-title text-3xl mb-6">Système de Détection IoT</h1>
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="card-title text-3xl">Système de Détection IoT</h1>
+                    <div class="flex items-center gap-4">
+                        <span id="user-info" class="text-base"></span>
+                        <button onclick="logout()" class="btn btn-ghost">Déconnexion</button>
+                    </div>
+                </div>
                 
                 <!-- État de l'Arduino -->
                 <div class="alert mb-4">
@@ -148,6 +154,39 @@
     </div>
 
     <script>
+        // Vérifier si l'utilisateur est connecté
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/user');
+                if (!response.ok) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                const user = await response.json();
+                document.getElementById('user-info').textContent = `Connecté en tant que ${user.username}`;
+            } catch (err) {
+                console.error('Error checking auth:', err);
+                window.location.href = '/login.html';
+            }
+        }
+
+        // Fonction de déconnexion
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                });
+                if (response.ok) {
+                    window.location.href = '/login.html';
+                }
+            } catch (err) {
+                console.error('Error during logout:', err);
+            }
+        }
+
+        // Vérifier l'authentification au chargement
+        checkAuth();
+
         const websocket = new WebSocket("ws://localhost:80");
         const sensors = ['touch', 'sound', 'ir'];
         const sensorStates = {

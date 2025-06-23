@@ -12,6 +12,8 @@
     "autoprefixer": "^10.4.21",
     "daisyui": "^5.0.43",
     "express": "^5.1.0",
+    "express-mysql-session": "^3.0.3",
+    "express-session": "^1.18.1",
     "http": "^0.0.1-security",
     "mysql2": "^3.14.1",
     "postcss": "^8.5.4",
